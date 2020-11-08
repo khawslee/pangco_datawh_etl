@@ -208,7 +208,7 @@ namespace pangco_datawh_etl
                     v_adapter.Fill(v_table);
 
                     string _tablename, _subtable, _lastdatetime, _sql;
-                    string[] _subtable_split;
+                    string[] _tablename_split, _subtable_split;
 
                     progressBar1.Maximum = v_table.Rows.Count;
                     progressBar1.Value = 1;
@@ -216,44 +216,45 @@ namespace pangco_datawh_etl
                     foreach (DataRow vrow in v_table.Rows)
                     {
                         _tablename = vrow["table_name"].ToString();
+                        _tablename_split = _tablename.Split('.');
                         _subtable = vrow["table_column"].ToString();
-                        _lastdatetime = vrow["last_update"].ToString();
                         _subtable_split = _subtable.Split('~');
+                        _lastdatetime = vrow["last_update"].ToString();
 
                         chk_tablevalid(_tablename);
+                        if (_subtable_split.Length == 2)
+                        {
+                            chk_tablevalid(_subtable_split[1]);
+                        }
                         if (_subtable_split.Length == 3)
                         {
                             chk_tablevalid(_subtable_split[1]);
-                        }
-                        if (_subtable_split.Length == 5)
-                        {
-                            chk_tablevalid(_subtable_split[1]);
-                            chk_tablevalid(_subtable_split[3]);
+                            chk_tablevalid(_subtable_split[2]);
                         }
 
                         _table1.Clear();
-                        if(_subtable_split[0] != "NONE")
-                            sql = "SELECT * FROM "+ _tablename + " WHERE "+ _subtable_split[0] + " > '" + _lastdatetime + "'";
+                        if (_subtable_split[0] != "NONE")
+                            sql = "SELECT * FROM " + _tablename_split[0] + " WHERE " + _subtable_split[0] + " > '" + _lastdatetime + "'";
                         else
-                            sql = "SELECT * FROM " + _tablename;
+                            sql = "SELECT * FROM " + _tablename_split[0];
 
                         sql_adapter = new SqlDataAdapter(sql, Globals.autocount_con);
 
                         sql_adapter.Fill(_table1);
-                        
-                        foreach(DataRow _t1row in _table1.Rows)
+
+                        foreach (DataRow _t1row in _table1.Rows)
                         {
 
                         }
 
-                        _sql = "UPDATE autocount_tables SET last_update=now() WHERE table_name='"+ _tablename + "'";
+                        _sql = "UPDATE autocount_tables SET last_update=now() WHERE table_name='" + _tablename + "'";
                         var m_createdb_cmd = new NpgsqlCommand(_sql, Globals.postg_con);
                         m_createdb_cmd.ExecuteNonQuery();
 
                         _currentrow += 1;
                         progressBar1.Value = _currentrow;
                         Application.DoEvents();
-                        if(Globals.stop_iteration)
+                        if (Globals.stop_iteration)
                         {
                             Globals.stop_iteration = false;
                             richTextBox1.AppendText("Sync stop by user!" + Environment.NewLine);
@@ -268,18 +269,19 @@ namespace pangco_datawh_etl
         {
             int _count = 0;
             string _sql, _colname, _coldatatype, _condatatype;
+            string[] _tablename_split = _tablename.Split('.');
 
-            if (FindTable_autoc(_tablename))
+            if (FindTable_autoc(_tablename_split[0]))
             {
-                getTableSchema(_tablename, true);
-                if (FindTable_postg(_tablename))
+                getTableSchema(_tablename_split[0], true);
+                if (FindTable_postg(_tablename_split[0]))
                 {
-                    getTableSchema(_tablename, false);
+                    getTableSchema(_tablename_split[0], false);
                 }
                 else
                 {
                     // No table found in datawarehouse, so create new table and insert record
-                    _sql = "CREATE TABLE \"" + _tablename + "\"(";
+                    _sql = "CREATE TABLE \"" + _tablename_split[0] + "\"(";
                     _count = 0;
                     foreach (DataRow row in Globals.schema_autoc.Rows)
                     {
@@ -290,7 +292,19 @@ namespace pangco_datawh_etl
                         {
                             _sql = _sql + ", ";
                         }
-                        _sql = _sql + "\"" + _colname + "\" " + _condatatype;
+
+                        if (_tablename_split.Length > 1)
+                        {
+                            if (_colname == _tablename_split[1])
+                                _sql = _sql + "\"" + _colname + "\" " + _condatatype + " primary key";
+                            else
+                                _sql = _sql + "\"" + _colname + "\" " + _condatatype;
+                        } 
+                        else
+                        {
+                            _sql = _sql + "\"" + _colname + "\" " + _condatatype;
+                        }
+
                         _count++;
                     }
                     _sql = _sql + ")";
