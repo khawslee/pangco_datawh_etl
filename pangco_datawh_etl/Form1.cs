@@ -42,11 +42,11 @@ namespace pangco_datawh_etl
                 try
                 {
                     Globals.postg_con.Open();
-                    richTextBox1.AppendText("Data Warehouse connected!" + Environment.NewLine);
+                    showMemo("Data Warehouse connected!");
                 }
                 catch (Exception)
                 {
-                    richTextBox1.AppendText("Fail to connect to Data Warehouse" + Environment.NewLine);
+                    showMemo("Fail to connect to Data Warehouse");
                     return false;
                 }
             }
@@ -71,11 +71,11 @@ namespace pangco_datawh_etl
                 try
                 {
                     Globals.autocount_con.Open();
-                    richTextBox1.AppendText("Autocount connected!" + Environment.NewLine);
+                    showMemo("Autocount connected!");
                 }
                 catch (Exception)
                 {
-                    richTextBox1.AppendText("Fail to connect to Autocount" + Environment.NewLine);
+                    showMemo("Fail to connect to Autocount");
                     return false;
                 }
             }
@@ -88,7 +88,7 @@ namespace pangco_datawh_etl
                 if (Globals.postg_con.State == ConnectionState.Open)
                 {
                     Globals.postg_con.Close();
-                    richTextBox1.AppendText("DataWarehouse connection closed!" + Environment.NewLine);
+                    showMemo("DataWarehouse connection closed!");
                 }
         }
 
@@ -98,7 +98,7 @@ namespace pangco_datawh_etl
                 if (Globals.autocount_con.State == ConnectionState.Open)
                 {
                     Globals.autocount_con.Close();
-                    richTextBox1.AppendText("Autocount connection closed!" + Environment.NewLine);
+                    showMemo("Autocount connection closed!");
                 }
         }
 
@@ -185,15 +185,23 @@ namespace pangco_datawh_etl
             }
         }
 
+        private void showMemo(string _memo)
+        {
+            richTextBox1.AppendText(DateTime.Now.ToString() + ": " + _memo + Environment.NewLine);
+        }
+
         private void btn_sync_Click(object sender, EventArgs e)
         {
             NpgsqlDataAdapter v_adapter = null;
             SqlDataAdapter sql_adapter = null;
             DataTable v_table = new DataTable();
-            DataTable _table1 = new DataTable();
-            DataTable _table2 = new DataTable();
-            DataTable _table3 = new DataTable();
+            DataTable _table1;
             int _currentrow = 0;
+            int _count = 0;
+            string sql = "", _incsql = "", _invsql = "", _insertsql = "", _upsql = "";
+            string _dockey = "";
+
+            Globals.stop_iteration = false;
 
             close_Autocount();
             close_Datawarehouse();
@@ -201,7 +209,9 @@ namespace pangco_datawh_etl
             {
                 if (Connection_Autocount())
                 {
-                    string sql = "SELECT * FROM autocount_tables WHERE last_update < now()";
+                    Application.DoEvents();
+
+                    sql = "SELECT * FROM autocount_tables WHERE last_update < now()";
 
                     v_adapter = new NpgsqlDataAdapter(sql, Globals.postg_con);
 
@@ -209,17 +219,20 @@ namespace pangco_datawh_etl
 
                     string _tablename, _subtable, _lastdatetime, _sql;
                     string[] _tablename_split, _subtable_split;
+                    DateTime dt_tmp;
 
                     progressBar1.Maximum = v_table.Rows.Count;
                     progressBar1.Value = 1;
 
                     foreach (DataRow vrow in v_table.Rows)
                     {
+                        
                         _tablename = vrow["table_name"].ToString();
                         _tablename_split = _tablename.Split('.');
                         _subtable = vrow["table_column"].ToString();
                         _subtable_split = _subtable.Split('~');
-                        _lastdatetime = vrow["last_update"].ToString();
+                        dt_tmp = Convert.ToDateTime(vrow["last_update"]);
+                        _lastdatetime = dt_tmp.ToString("yyyy-MM-dd HH:mm:ss");
 
                         chk_tablevalid(_tablename);
                         if (_subtable_split.Length == 2)
@@ -232,7 +245,8 @@ namespace pangco_datawh_etl
                             chk_tablevalid(_subtable_split[2]);
                         }
 
-                        _table1.Clear();
+                        _table1 = null;
+                        _table1 = new DataTable();
                         if (_subtable_split[0] != "NONE")
                             sql = "SELECT * FROM " + _tablename_split[0] + " WHERE " + _subtable_split[0] + " > '" + _lastdatetime + "'";
                         else
@@ -242,9 +256,66 @@ namespace pangco_datawh_etl
 
                         sql_adapter.Fill(_table1);
 
-                        foreach (DataRow _t1row in _table1.Rows)
-                        {
+                        if (_table1.Rows.Count > 0)
+                        {                            
+                            foreach (DataRow _t1row in _table1.Rows)
+                            {
+                                _insertsql = "INSERT INTO \"" + _tablename_split[0] + "\" ";
+                                _incsql = "(";
+                                _invsql = "(";
+                                _upsql = "";
+                                _count = 0;
+                                foreach (DataColumn dc in _table1.Columns)
+                                {
+                                    if (_count > 0)
+                                    {
+                                        _incsql = _incsql + ", ";
+                                        _invsql = _invsql + ", ";
+                                        _upsql = _upsql + ", ";
 
+                                    }
+                                    _incsql = _incsql + "\"" + dc.ColumnName + "\"";
+                                    if(!_t1row.IsNull(dc.ColumnName))
+                                        _invsql = _invsql + "'" + _t1row[dc.ColumnName].ToString().Replace("'", "''") + "'";
+                                    else
+                                        _invsql = _invsql + "null";
+                                    if (!_t1row.IsNull(dc.ColumnName))
+                                        _upsql = _upsql + "\"" + dc.ColumnName + "\" = '" + _t1row[dc.ColumnName].ToString().Replace("'", "''") + "'";
+                                    else
+                                        _upsql = _upsql + "\"" + dc.ColumnName + "\" = null";
+
+                                    if(dc.ColumnName == _tablename_split[1])
+                                    {
+                                        _dockey = _t1row[dc.ColumnName].ToString();
+                                    }
+                                    _count++;
+                                }
+                                _incsql = _incsql + ")";
+                                _invsql = _invsql + ")";
+
+                                _insertsql = _insertsql + _incsql + " VALUES " + _invsql + " ON CONFLICT (\"" + _tablename_split[1] + "\") DO UPDATE SET " + _upsql;
+                                var m_createdb1_cmd = new NpgsqlCommand(_insertsql, Globals.postg_con);
+                                m_createdb1_cmd.Prepare();
+                                m_createdb1_cmd.ExecuteNonQuery();
+                                
+                                // add DTL
+                                if (_subtable_split.Length == 2)
+                                {
+                                    insert_dtldata(_tablename, _subtable_split[1], _dockey);
+                                }
+                                if (_subtable_split.Length == 3)
+                                {
+                                    insert_dtldata(_tablename, _subtable_split[1], _dockey);
+                                    insert_dtldata(_tablename, _subtable_split[2], _dockey);
+                                }
+
+                                if (Globals.stop_iteration)
+                                {
+                                    showMemo("Sync stop by user! [Sub]");
+                                    break;
+                                }
+                                Application.DoEvents();
+                            }
                         }
 
                         _sql = "UPDATE autocount_tables SET last_update=now() WHERE table_name='" + _tablename + "'";
@@ -256,11 +327,74 @@ namespace pangco_datawh_etl
                         Application.DoEvents();
                         if (Globals.stop_iteration)
                         {
-                            Globals.stop_iteration = false;
-                            richTextBox1.AppendText("Sync stop by user!" + Environment.NewLine);
+                            showMemo("Sync stop by user! [Main]");
                             break;
                         }
                     }
+                }
+            }
+        }
+
+        private void insert_dtldata(string _master, string _detail, string dockey)
+        {
+            DataTable _table1 = new DataTable();
+            SqlDataAdapter sql_adapter;
+
+            string sql="", _insertsql="", _incsql="", _invsql = "", _upsql = "";
+            int _count = 0;
+
+            string[] _master_split = _master.Split('.');
+            string[] _detail_split = _detail.Split('.');
+
+            sql = "SELECT * FROM " + _detail_split[0] + " WHERE " + _master_split[1] + " = '" + dockey + "'";
+
+            sql_adapter = new SqlDataAdapter(sql, Globals.autocount_con);
+
+            sql_adapter.Fill(_table1);
+
+            if (_table1.Rows.Count > 0)
+            {
+                foreach (DataRow _t1row in _table1.Rows)
+                {
+                    _insertsql = "INSERT INTO \"" + _detail_split[0] + "\" ";
+                    _incsql = "(";
+                    _invsql = "(";
+                    _upsql = "";
+                    _count = 0;
+                    foreach (DataColumn dc in _table1.Columns)
+                    {
+                        if (_count > 0)
+                        {
+                            _incsql = _incsql + ", ";
+                            _invsql = _invsql + ", ";
+                            _upsql = _upsql + ", ";
+
+                        }
+                        _incsql = _incsql + "\"" + dc.ColumnName + "\"";
+                        if (!_t1row.IsNull(dc.ColumnName))
+                            _invsql = _invsql + "'" + _t1row[dc.ColumnName].ToString().Replace("'", "''") + "'";
+                        else
+                            _invsql = _invsql + "null";
+                        if (!_t1row.IsNull(dc.ColumnName))
+                            _upsql = _upsql + "\"" + dc.ColumnName + "\" = '" + _t1row[dc.ColumnName].ToString().Replace("'", "''") + "'";
+                        else
+                            _upsql = _upsql + "\"" + dc.ColumnName + "\" = null";
+                        _count++;
+                    }
+                    _incsql = _incsql + ")";
+                    _invsql = _invsql + ")";
+
+                    _insertsql = _insertsql + _incsql + " VALUES " + _invsql + " ON CONFLICT (\"" + _detail_split[1] + "\") DO UPDATE SET " + _upsql;
+                    var m_createdb1_cmd = new NpgsqlCommand(_insertsql, Globals.postg_con);
+                    m_createdb1_cmd.Prepare();
+                    m_createdb1_cmd.ExecuteNonQuery();
+
+                    if (Globals.stop_iteration)
+                    {
+                        showMemo("Sync stop by user! [insert_dtldata]");
+                        break;
+                    }
+                    Application.DoEvents();
                 }
             }
         }
@@ -347,12 +481,14 @@ namespace pangco_datawh_etl
         {
             DataRow[] result;
             int _currentrow = 0;
+            string _filename = "";
 
             if (openFileDialog1.ShowDialog() == DialogResult.OK)
             {
                 if (!String.IsNullOrEmpty(openFileDialog1.FileName))
                 {
-                    richTextBox1.AppendText("Start loading excel to temporary table!" + Environment.NewLine);
+                    _filename = Path.GetFileName(openFileDialog1.FileName);
+                    showMemo("Start loading "+ _filename + " to temporary table!");
                     Application.DoEvents();
 
                     string unilevel_file = openFileDialog1.FileName;
@@ -378,7 +514,7 @@ namespace pangco_datawh_etl
                             var dataSet = reader.AsDataSet(conf);
                             dataSource = dataSet.Tables[0];
 
-                            richTextBox1.AppendText("Excel loaded in to temporary table!" + Environment.NewLine);
+                            showMemo("Excel loaded in to temporary table!");
                             Application.DoEvents();
                         }
                     }
@@ -410,7 +546,7 @@ namespace pangco_datawh_etl
                             cmd.Parameters.Add(p_i);
                             cmd.Prepare();   // This is optional but will optimize the statement for repeated use
 
-                            richTextBox1.AppendText("Uploading to DataWarehouse started." + Environment.NewLine);
+                            showMemo("Uploading to DataWarehouse started.");
                             Application.DoEvents();
 
                             foreach (DataRow row in result)
@@ -434,7 +570,7 @@ namespace pangco_datawh_etl
                             }
                             progressBar1.Value = _currentrow;
 
-                            richTextBox1.AppendText("Uploading to DataWarehouse ended." + Environment.NewLine);
+                            showMemo("Uploading "+ _filename + " to DataWarehouse ended.");
                             Application.DoEvents();
                         }
                     }
@@ -461,11 +597,11 @@ namespace pangco_datawh_etl
                 try
                 {
                     Globals.autocount_con.Open();
-                    richTextBox1.AppendText("Autocount connected!" + Environment.NewLine);
+                    showMemo("Autocount connected!");
                 }
                 catch (Exception)
                 {
-                    richTextBox1.AppendText("Fail to connect to Autocount" + Environment.NewLine);
+                    showMemo("Fail to connect to Autocount");
                     return false;
                 }
             }
@@ -488,7 +624,7 @@ namespace pangco_datawh_etl
                 progressBar1.Maximum = lines.Length;
                 progressBar1.Value = 1;
 
-                richTextBox1.AppendText("List all datatype" + Environment.NewLine);
+                showMemo("List all datatype");
                 Application.DoEvents();
 
                 foreach (string line in lines)
@@ -511,7 +647,7 @@ namespace pangco_datawh_etl
                     }
                     catch (Exception ex)
                     {
-                        richTextBox1.AppendText("Error Occurred: " + ex + Environment.NewLine);
+                        showMemo("Error Occurred: " + ex);
                     }
                     _currentrow += 1;
                     if (_currentrow % 10 == 0)
@@ -522,12 +658,12 @@ namespace pangco_datawh_etl
                 }
                 progressBar1.Value = _currentrow;
 
-                richTextBox1.AppendText("List all datatype ended." + Environment.NewLine);
+                showMemo("List all datatype ended.");
                 Application.DoEvents();
 
                 foreach (string lset in set)
                 {
-                    richTextBox1.AppendText(lset + Environment.NewLine);
+                    showMemo(lset);
                 }
             }
         }
@@ -550,17 +686,17 @@ namespace pangco_datawh_etl
                         {
                             var m_createdb_cmd = new NpgsqlCommand(@"DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO postgres; GRANT ALL ON SCHEMA public TO public; COMMENT ON SCHEMA public IS 'standard public schema';", Globals.postg_con);
                             m_createdb_cmd.ExecuteNonQuery();
-                            richTextBox1.AppendText("Drop all tables!" + Environment.NewLine);
+                            showMemo("Drop all tables!");
 
                             m_createdb_cmd = new NpgsqlCommand(@"CREATE SEQUENCE public.unilever_inv_id_seq INCREMENT 1 START 1 MINVALUE 1 MAXVALUE 9223372036854775807 CACHE 1; ALTER SEQUENCE public.unilever_inv_id_seq OWNER TO postgres;", Globals.postg_con);
                             m_createdb_cmd.ExecuteNonQuery();
                             m_createdb_cmd = new NpgsqlCommand(@"CREATE TABLE public.unilever_inv(id integer NOT NULL DEFAULT nextval('unilever_inv_id_seq'::regclass), invtype text, docno text, docdate date, debtorcode text, salesagent text, prodname text, prodcode text, taxableamt numeric(10, 2), amount numeric(10, 2), last_update timestamp DEFAULT now(), CONSTRAINT unilevel_inv_pkey PRIMARY KEY(id)) TABLESPACE pg_default; ALTER TABLE public.unilever_inv OWNER to postgres;", Globals.postg_con);
                             m_createdb_cmd.ExecuteNonQuery();
-                            richTextBox1.AppendText("Create Table unilever_inv!" + Environment.NewLine);
+                            showMemo("Create Table unilever_inv!");
 
                             m_createdb_cmd = new NpgsqlCommand(@"CREATE TABLE public.autocount_tables(table_name text, table_column text, last_update timestamp without time zone) TABLESPACE pg_default; ALTER TABLE public.autocount_tables OWNER to postgres;", Globals.postg_con);
                             m_createdb_cmd.ExecuteNonQuery();
-                            richTextBox1.AppendText("Create Table autocount_tables!" + Environment.NewLine);
+                            showMemo("Create Table autocount_tables!");
 
                             if (File.Exists(@"AutocountInit.csv"))
                             {
@@ -580,7 +716,7 @@ namespace pangco_datawh_etl
                                         var p_c = new NpgsqlParameter("c", DbType.DateTime);
                                         cmd.Parameters.Add(p_c);
 
-                                        richTextBox1.AppendText("Update prefered table list." + Environment.NewLine);
+                                        showMemo("Update prefered table list.");
                                         Application.DoEvents();
                                         string[] s_str;
                                         foreach (string line in lines)
@@ -588,7 +724,7 @@ namespace pangco_datawh_etl
                                             s_str = line.Split(',');
                                             p_a.Value = s_str[0];
                                             p_b.Value = s_str[1];
-                                            p_c.Value = Convert.ToDateTime(String.Format("{0:dd/MM/yyyy}", "01/01/2020"));
+                                            p_c.Value = Convert.ToDateTime(String.Format("{0:dd/MM/yyyy}", "15/06/2020"));
                                             cmd.ExecuteNonQuery();
                                             _currentrow += 1;
                                             if (_currentrow % 10 == 0)
@@ -599,7 +735,7 @@ namespace pangco_datawh_etl
                                         }
                                         progressBar1.Value = _currentrow;
 
-                                        richTextBox1.AppendText("Update prefered table list ended." + Environment.NewLine);
+                                        showMemo("Update prefered table list ended.");
                                         Application.DoEvents();
                                     }
                                 }
@@ -684,22 +820,10 @@ namespace pangco_datawh_etl
             }
             catch (Exception ex)
             {
-                richTextBox1.AppendText("Error Occurred: " + ex + Environment.NewLine);
+                showMemo("Error Occurred: " + ex);
                 return false;
             }
             return true;
-        }
-
-        private void button1_Click(object sender, EventArgs e)
-        {
-            close_Autocount();
-            close_Datawarehouse();
-            if (Connection_Datawarehouse())
-            {
-                if (Connection_Autocount())
-                {
-                }
-            }
         }
 
         private void button4_Click(object sender, EventArgs e)
