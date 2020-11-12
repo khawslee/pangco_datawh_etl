@@ -21,5 +21,7 @@ namespace pangco_datawh_etl
         public static DataTable schema_autoc = null;
         public static DataTable schema_postg = null;
         public static bool stop_iteration = false;
+        public static bool daily_Sync = false;
+        public static bool in_sync = false;
     }
 }

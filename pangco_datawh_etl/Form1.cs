@@ -62,7 +62,17 @@ namespace pangco_datawh_etl
                 string _acuser = (string)Globals.jsonconfig["ac_user"];
                 string _acpass = (string)Globals.jsonconfig["ac_pass"];
                 string _acdatabase = (string)Globals.jsonconfig["ac_database"];
-                var connetionString = "Data Source=" + _host + @"\" + _folder + "; Initial Catalog=" + _acdatabase + ";User ID=" + _acuser + ";Password=" + _acpass;
+                string _acauthentication = (string)Globals.jsonconfig["ac_windows_authentication"];
+                string connetionString = "";
+
+                if (_acauthentication == "0")
+                {
+                    connetionString = "Data Source=" + _host + @"\" + _folder + "; Initial Catalog=" + _acdatabase + ";User ID=" + _acuser + ";Password=" + _acpass;
+                }
+                else
+                {
+                    connetionString = "Data Source=" + _host + @"\" + _folder + "; Initial Catalog=" + _acdatabase + "; Integrated Security=True;";
+                }
 
                 Globals.autocount_con = new SqlConnection(connetionString);
             }
@@ -202,6 +212,7 @@ namespace pangco_datawh_etl
             string _dockey = "";
 
             Globals.stop_iteration = false;
+            Globals.in_sync = true;
 
             close_Autocount();
             close_Datawarehouse();
@@ -209,8 +220,6 @@ namespace pangco_datawh_etl
             {
                 if (Connection_Autocount())
                 {
-                    Application.DoEvents();
-
                     sql = "SELECT * FROM autocount_tables WHERE last_update < now()";
 
                     v_adapter = new NpgsqlDataAdapter(sql, Globals.postg_con);
@@ -226,13 +235,16 @@ namespace pangco_datawh_etl
 
                     foreach (DataRow vrow in v_table.Rows)
                     {
-                        
+
                         _tablename = vrow["table_name"].ToString();
                         _tablename_split = _tablename.Split('.');
                         _subtable = vrow["table_column"].ToString();
                         _subtable_split = _subtable.Split('~');
                         dt_tmp = Convert.ToDateTime(vrow["last_update"]);
                         _lastdatetime = dt_tmp.ToString("yyyy-MM-dd HH:mm:ss");
+
+                        showMemo("Processing " + _tablename_split[0]);
+                        Application.DoEvents();
 
                         chk_tablevalid(_tablename);
                         if (_subtable_split.Length == 2)
@@ -250,14 +262,20 @@ namespace pangco_datawh_etl
                         if (_subtable_split[0] != "NONE")
                             sql = "SELECT * FROM " + _tablename_split[0] + " WHERE " + _subtable_split[0] + " > '" + _lastdatetime + "'";
                         else
+                        {
                             sql = "SELECT * FROM " + _tablename_split[0];
+                            _insertsql = "DELETE FROM \"" + _tablename_split[0] + "\";";
+                            var m_createdb1_cmd = new NpgsqlCommand(_insertsql, Globals.postg_con);
+                            m_createdb1_cmd.Prepare();
+                            m_createdb1_cmd.ExecuteNonQuery();
+                        }
 
                         sql_adapter = new SqlDataAdapter(sql, Globals.autocount_con);
 
                         sql_adapter.Fill(_table1);
 
                         if (_table1.Rows.Count > 0)
-                        {                            
+                        {
                             foreach (DataRow _t1row in _table1.Rows)
                             {
                                 _insertsql = "INSERT INTO \"" + _tablename_split[0] + "\" ";
@@ -275,29 +293,41 @@ namespace pangco_datawh_etl
 
                                     }
                                     _incsql = _incsql + "\"" + dc.ColumnName + "\"";
-                                    if(!_t1row.IsNull(dc.ColumnName))
-                                        _invsql = _invsql + "'" + _t1row[dc.ColumnName].ToString().Replace("'", "''") + "'";
-                                    else
-                                        _invsql = _invsql + "null";
                                     if (!_t1row.IsNull(dc.ColumnName))
-                                        _upsql = _upsql + "\"" + dc.ColumnName + "\" = '" + _t1row[dc.ColumnName].ToString().Replace("'", "''") + "'";
-                                    else
-                                        _upsql = _upsql + "\"" + dc.ColumnName + "\" = null";
-
-                                    if(dc.ColumnName == _tablename_split[1])
                                     {
-                                        _dockey = _t1row[dc.ColumnName].ToString();
+                                        _invsql = _invsql + "'" + _t1row[dc.ColumnName].ToString().Replace("'", "''") + "'";
+                                        _upsql = _upsql + "\"" + dc.ColumnName + "\" = '" + _t1row[dc.ColumnName].ToString().Replace("'", "''") + "'";
+                                    }
+                                    else
+                                    {
+                                        _invsql = _invsql + "null";
+                                        _upsql = _upsql + "\"" + dc.ColumnName + "\" = null";
+                                    }
+
+                                    if (_subtable_split[0] != "NONE")
+                                    {
+                                        if (dc.ColumnName == _tablename_split[1])
+                                        {
+                                            _dockey = _t1row[dc.ColumnName].ToString();
+                                        }
                                     }
                                     _count++;
                                 }
                                 _incsql = _incsql + ")";
                                 _invsql = _invsql + ")";
 
-                                _insertsql = _insertsql + _incsql + " VALUES " + _invsql + " ON CONFLICT (\"" + _tablename_split[1] + "\") DO UPDATE SET " + _upsql;
+                                if (_subtable_split[0] != "NONE")
+                                {
+                                    _insertsql = _insertsql + _incsql + " VALUES " + _invsql + " ON CONFLICT (\"" + _tablename_split[1] + "\") DO UPDATE SET " + _upsql;
+                                }
+                                else
+                                {
+                                    _insertsql = _insertsql + _incsql + " VALUES " + _invsql;
+                                }
                                 var m_createdb1_cmd = new NpgsqlCommand(_insertsql, Globals.postg_con);
                                 m_createdb1_cmd.Prepare();
                                 m_createdb1_cmd.ExecuteNonQuery();
-                                
+
                                 // add DTL
                                 if (_subtable_split.Length == 2)
                                 {
@@ -333,6 +363,9 @@ namespace pangco_datawh_etl
                     }
                 }
             }
+            close_Autocount();
+            close_Datawarehouse();
+            Globals.in_sync = false;
         }
 
         private void insert_dtldata(string _master, string _detail, string dockey)
@@ -340,8 +373,9 @@ namespace pangco_datawh_etl
             DataTable _table1 = new DataTable();
             SqlDataAdapter sql_adapter;
 
-            string sql="", _insertsql="", _incsql="", _invsql = "", _upsql = "";
+            string sql = "", _insertsql = "", _incsql = "", _invsql = "", _upsql = "";
             int _count = 0;
+            string dtlkey = "";
 
             string[] _master_split = _master.Split('.');
             string[] _detail_split = _detail.Split('.');
@@ -379,6 +413,12 @@ namespace pangco_datawh_etl
                             _upsql = _upsql + "\"" + dc.ColumnName + "\" = '" + _t1row[dc.ColumnName].ToString().Replace("'", "''") + "'";
                         else
                             _upsql = _upsql + "\"" + dc.ColumnName + "\" = null";
+
+                        if (dc.ColumnName == _detail_split[1])
+                        {
+                            dtlkey = _t1row[dc.ColumnName].ToString();
+                        }
+
                         _count++;
                     }
                     _incsql = _incsql + ")";
@@ -433,7 +473,7 @@ namespace pangco_datawh_etl
                                 _sql = _sql + "\"" + _colname + "\" " + _condatatype + " primary key";
                             else
                                 _sql = _sql + "\"" + _colname + "\" " + _condatatype;
-                        } 
+                        }
                         else
                         {
                             _sql = _sql + "\"" + _colname + "\" " + _condatatype;
@@ -482,13 +522,14 @@ namespace pangco_datawh_etl
             DataRow[] result;
             int _currentrow = 0;
             string _filename = "";
+            bool _continue = true;
 
             if (openFileDialog1.ShowDialog() == DialogResult.OK)
             {
                 if (!String.IsNullOrEmpty(openFileDialog1.FileName))
                 {
                     _filename = Path.GetFileName(openFileDialog1.FileName);
-                    showMemo("Start loading "+ _filename + " to temporary table!");
+                    showMemo("Start loading " + _filename + " to temporary table!");
                     Application.DoEvents();
 
                     string unilevel_file = openFileDialog1.FileName;
@@ -518,6 +559,7 @@ namespace pangco_datawh_etl
                             Application.DoEvents();
                         }
                     }
+                    result = null;
                     result = dataSource.Select();
                     if (Connection_Datawarehouse())
                     {
@@ -551,16 +593,28 @@ namespace pangco_datawh_etl
 
                             foreach (DataRow row in result)
                             {
-                                p_a.Value = Convert.ToString(row["INVTYPE"]);
-                                p_b.Value = Convert.ToString(row["Sales Invoice Tax Number"]);
-                                p_c.Value = Convert.ToDateTime(String.Format("{0:dd/MM/yyyy}", row["INVH_DATE"]));
-                                p_d.Value = "300" + Convert.ToString(row["Outlet Ref Code"]);
-                                p_e.Value = Convert.ToString(row["Salesman Name(Order Booker)"]);
-                                p_f.Value = Convert.ToString(row["Prod Name"]);
-                                p_g.Value = Convert.ToString(row["Prod Code"]);
-                                p_h.Value = Convert.ToDecimal(row["Net Amount"]);
-                                p_i.Value = Convert.ToDecimal(row["NIV_AFT_GST"]);
-                                cmd.ExecuteNonQuery();
+                                _continue = true;
+
+                                try
+                                {
+                                    p_a.Value = Convert.ToString(row["INVTYPE"]);
+                                    p_b.Value = Convert.ToString(row["Sales Invoice Tax Number"]);
+                                    p_c.Value = Convert.ToDateTime(row["INVH_DATE"]);
+                                    p_d.Value = "300" + Convert.ToString(row["Outlet Ref Code"]);
+                                    p_e.Value = Convert.ToString(row["Salesman Name(Order Booker)"]);
+                                    p_f.Value = Convert.ToString(row["Prod Name"]);
+                                    p_g.Value = Convert.ToString(row["Prod Code"]);
+                                    p_h.Value = Convert.ToDecimal(row["Net Amount"]);
+                                    p_i.Value = Convert.ToDecimal(row["NIV_AFT_GST"]);
+                                }
+                                catch
+                                {
+                                    _continue = false;
+                                }
+                                
+                                if(_continue)
+                                    cmd.ExecuteNonQuery();
+                                
                                 _currentrow += 1;
                                 if (_currentrow % 10 == 0)
                                 {
@@ -570,10 +624,11 @@ namespace pangco_datawh_etl
                             }
                             progressBar1.Value = _currentrow;
 
-                            showMemo("Uploading "+ _filename + " to DataWarehouse ended.");
+                            showMemo("Uploading " + _filename + " to DataWarehouse ended.");
                             Application.DoEvents();
                         }
                     }
+                    showMemo("Loading " + _filename + "into datawarehouse successful!");
                     close_Datawarehouse();
                 }
             }
@@ -606,66 +661,6 @@ namespace pangco_datawh_etl
                 }
             }
             return true;
-        }
-
-        private void button3_Click(object sender, EventArgs e)
-        {
-            SqlCommand cmd_autoc;
-            SqlDataReader reader_autoc;
-            DataTable schema_autoc;
-            int _currentrow = 0;
-            string sql;
-            HashSet<string> set = new HashSet<string>();
-
-            if (File.Exists(@"tables.txt"))
-            {
-                var lines = File.ReadAllLines(@"tables.txt");
-
-                progressBar1.Maximum = lines.Length;
-                progressBar1.Value = 1;
-
-                showMemo("List all datatype");
-                Application.DoEvents();
-
-                foreach (string line in lines)
-                {
-                    sql = @"select * from " + line + " WHERE 1 = 0";
-                    try
-                    {
-                        cmd_autoc = new SqlCommand(sql, Globals.autocount_con);
-                        reader_autoc = cmd_autoc.ExecuteReader();
-                        schema_autoc = reader_autoc.GetSchemaTable();
-
-                        foreach (DataRow row in schema_autoc.Rows)
-                        {
-                            set.Add(row["DataTypeName"].ToString());
-                            //var name = row["ColumnName"];
-                            //var dataType = row["DataTypeName"];
-                            //richTextBox1.AppendText(name + ":" + dataType + Environment.NewLine);
-                        }
-                        reader_autoc.Close();
-                    }
-                    catch (Exception ex)
-                    {
-                        showMemo("Error Occurred: " + ex);
-                    }
-                    _currentrow += 1;
-                    if (_currentrow % 10 == 0)
-                    {
-                        progressBar1.Value = _currentrow;
-                        Application.DoEvents();
-                    }
-                }
-                progressBar1.Value = _currentrow;
-
-                showMemo("List all datatype ended.");
-                Application.DoEvents();
-
-                foreach (string lset in set)
-                {
-                    showMemo(lset);
-                }
-            }
         }
 
         private void initializeDataWarehouseToolStripMenuItem_Click(object sender, EventArgs e)
@@ -724,7 +719,7 @@ namespace pangco_datawh_etl
                                             s_str = line.Split(',');
                                             p_a.Value = s_str[0];
                                             p_b.Value = s_str[1];
-                                            p_c.Value = Convert.ToDateTime(String.Format("{0:dd/MM/yyyy}", "15/06/2020"));
+                                            p_c.Value = Convert.ToDateTime("01/01/2000");
                                             cmd.ExecuteNonQuery();
                                             _currentrow += 1;
                                             if (_currentrow % 10 == 0)
@@ -829,6 +824,22 @@ namespace pangco_datawh_etl
         private void button4_Click(object sender, EventArgs e)
         {
             Globals.stop_iteration = true;
+            Globals.in_sync = false;
+        }
+
+        private void timer1_Tick(object sender, EventArgs e)
+        {
+            if (DateTime.Now.Hour == 4 && Globals.daily_Sync == false)
+            {
+                Globals.daily_Sync = true;
+                if (!Globals.in_sync)
+                    btn_sync_Click(null, null);
+            }
+
+            if (DateTime.Now.Hour != 4 && Globals.daily_Sync == true)
+            {
+                Globals.daily_Sync = false;
+            }
         }
     }
 }

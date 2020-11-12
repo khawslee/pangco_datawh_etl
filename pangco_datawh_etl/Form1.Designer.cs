@@ -42,8 +42,8 @@
             this.panel1 = new System.Windows.Forms.Panel();
             this.progressBar1 = new System.Windows.Forms.ProgressBar();
             this.richTextBox1 = new System.Windows.Forms.RichTextBox();
-            this.button3 = new System.Windows.Forms.Button();
             this.button4 = new System.Windows.Forms.Button();
+            this.timer1 = new System.Windows.Forms.Timer(this.components);
             this.menuStrip1.SuspendLayout();
             this.panel1.SuspendLayout();
             this.SuspendLayout();
@@ -153,17 +153,6 @@
             this.richTextBox1.TabIndex = 10;
             this.richTextBox1.Text = "";
             // 
-            // button3
-            // 
-            this.button3.Location = new System.Drawing.Point(12, 203);
-            this.button3.Name = "button3";
-            this.button3.Size = new System.Drawing.Size(93, 43);
-            this.button3.TabIndex = 13;
-            this.button3.Text = "Show Schema";
-            this.button3.UseVisualStyleBackColor = true;
-            this.button3.Visible = false;
-            this.button3.Click += new System.EventHandler(this.button3_Click);
-            // 
             // button4
             // 
             this.button4.Location = new System.Drawing.Point(12, 374);
@@ -174,13 +163,18 @@
             this.button4.UseVisualStyleBackColor = true;
             this.button4.Click += new System.EventHandler(this.button4_Click);
             // 
+            // timer1
+            // 
+            this.timer1.Enabled = true;
+            this.timer1.Interval = 1800000;
+            this.timer1.Tick += new System.EventHandler(this.timer1_Tick);
+            // 
             // Form1
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(8F, 16F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.ClientSize = new System.Drawing.Size(840, 447);
             this.Controls.Add(this.button4);
-            this.Controls.Add(this.button3);
             this.Controls.Add(this.panel1);
             this.Controls.Add(this.button2);
             this.Controls.Add(this.btn_unilever);
@@ -216,9 +210,9 @@
         private System.Windows.Forms.Panel panel1;
         private System.Windows.Forms.ProgressBar progressBar1;
         private System.Windows.Forms.RichTextBox richTextBox1;
-        private System.Windows.Forms.Button button3;
         private System.Windows.Forms.ToolStripMenuItem initializeDataWarehouseToolStripMenuItem;
         private System.Windows.Forms.Button button4;
+        private System.Windows.Forms.Timer timer1;
     }
 }
 
