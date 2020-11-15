@@ -266,7 +266,7 @@ namespace pangco_datawh_etl
                             sql = "SELECT * FROM " + _tablename_split[0];
                             _insertsql = "DELETE FROM \"" + _tablename_split[0] + "\";";
                             var m_createdb1_cmd = new NpgsqlCommand(_insertsql, Globals.postg_con);
-                            m_createdb1_cmd.Prepare();
+
                             m_createdb1_cmd.ExecuteNonQuery();
                         }
 
@@ -325,7 +325,7 @@ namespace pangco_datawh_etl
                                     _insertsql = _insertsql + _incsql + " VALUES " + _invsql;
                                 }
                                 var m_createdb1_cmd = new NpgsqlCommand(_insertsql, Globals.postg_con);
-                                m_createdb1_cmd.Prepare();
+
                                 m_createdb1_cmd.ExecuteNonQuery();
 
                                 // add DTL
@@ -426,7 +426,7 @@ namespace pangco_datawh_etl
 
                     _insertsql = _insertsql + _incsql + " VALUES " + _invsql + " ON CONFLICT (\"" + _detail_split[1] + "\") DO UPDATE SET " + _upsql;
                     var m_createdb1_cmd = new NpgsqlCommand(_insertsql, Globals.postg_con);
-                    m_createdb1_cmd.Prepare();
+
                     m_createdb1_cmd.ExecuteNonQuery();
 
                     if (Globals.stop_iteration)
