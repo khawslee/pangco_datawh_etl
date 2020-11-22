@@ -441,6 +441,8 @@ namespace pangco_datawh_etl
             int _count = 0;
             string _sql, _colname, _coldatatype, _condatatype;
             string[] _tablename_split = _tablename.Split('.');
+            List<string> _cs = new List<string>();
+            List<string> _missing = new List<string>();
 
             if (FindTable_autoc(_tablename_split[0]))
             {
@@ -448,6 +450,34 @@ namespace pangco_datawh_etl
                 if (FindTable_postg(_tablename_split[0]))
                 {
                     getTableSchema(_tablename_split[0], false);
+                    // Compare Schema
+                    _cs.Clear();
+                    _missing.Clear();
+                    foreach (DataRow row in Globals.schema_postg.Rows)
+                    {
+                        _colname = row["ColumnName"].ToString();
+                        _cs.Add(_colname);
+                    }
+                    foreach (DataRow row in Globals.schema_autoc.Rows)
+                    {
+                        _colname = row["ColumnName"].ToString();
+                        if(!_cs.Contains(_colname))
+                        {
+                            _coldatatype = row["DataTypeName"].ToString();
+                            _condatatype = convertToPostg(_coldatatype);
+                            _missing.Add(_colname + "," + _condatatype);
+                        }
+                    }
+                    if(_missing.Count > 0)
+                    {
+                        foreach(string missi in _missing)
+                        {
+                            string[] missi_split = missi.Split(',');
+                            _sql = "ALTER TABLE \"" + _tablename_split[0] + "\" ADD COLUMN \"" + missi_split[0] + "\" " + missi_split[1];
+                            var m_createdb_cmd = new NpgsqlCommand(_sql, Globals.postg_con);
+                            m_createdb_cmd.ExecuteNonQuery();
+                        }                        
+                    }                    
                 }
                 else
                 {
@@ -603,7 +633,6 @@ namespace pangco_datawh_etl
                                 foreach (DataRow row in result)
                                 {
                                     _continue = true;
-
                                     try
                                     {
                                         if (!row.IsNull("INVTYPE"))
@@ -830,25 +859,30 @@ namespace pangco_datawh_etl
         {
             SqlCommand cmd_autoc;
             SqlDataReader reader_autoc;
+            NpgsqlCommand cmd_postg;
+            NpgsqlDataReader reader_postg;
 
-            string sql = @"select * from " + _tablename + " WHERE 1 = 0";
+            string sql = "select * from \"" + _tablename + "\" WHERE 1 = 0";
             try
             {
-                cmd_autoc = new SqlCommand(sql, Globals.autocount_con);
-                reader_autoc = cmd_autoc.ExecuteReader();
                 if (_autoc)
                 {
+                    cmd_autoc = new SqlCommand(sql, Globals.autocount_con);
+                    reader_autoc = cmd_autoc.ExecuteReader();
                     if (Globals.schema_autoc != null)
                         Globals.schema_autoc.Clear();
-                    Globals.schema_autoc = reader_autoc.GetSchemaTable();
+                    Globals.schema_autoc = reader_autoc.GetSchemaTable().Copy();
+                    reader_autoc.Close();
                 }
                 else
                 {
+                    cmd_postg = new NpgsqlCommand(sql, Globals.postg_con);
+                    reader_postg = cmd_postg.ExecuteReader();
                     if (Globals.schema_postg != null)
                         Globals.schema_postg.Clear();
-                    Globals.schema_postg = reader_autoc.GetSchemaTable();
-                }
-                reader_autoc.Close();
+                    Globals.schema_postg = reader_postg.GetSchemaTable().Copy();
+                    reader_postg.Close();
+                }                
             }
             catch (Exception ex)
             {
