@@ -18,12 +18,9 @@ namespace pangco_datawh_etl
 {
     public partial class Form1 : Form
     {
-        public DataTable dataSource;
-
         public Form1()
         {
             InitializeComponent();
-            dataSource = new DataTable();
         }
 
         private bool Connection_Datawarehouse()
@@ -519,6 +516,7 @@ namespace pangco_datawh_etl
 
         private void btn_unilever_Click(object sender, EventArgs e)
         {
+            DataTable dataSource = new DataTable();
             DataRow[] result;
             int _currentrow = 0;
             string _filename = "";
@@ -528,108 +526,146 @@ namespace pangco_datawh_etl
             {
                 if (!String.IsNullOrEmpty(openFileDialog1.FileName))
                 {
-                    _filename = Path.GetFileName(openFileDialog1.FileName);
-                    showMemo("Start loading " + _filename + " to temporary table!");
-                    Application.DoEvents();
-
-                    string unilevel_file = openFileDialog1.FileName;
-                    dataSource.Reset();
-                    using (var stream = File.Open(openFileDialog1.FileName, FileMode.Open, FileAccess.Read))
+                    foreach (String file in openFileDialog1.FileNames)
                     {
-                        using (var reader = ExcelReaderFactory.CreateReader(stream))
-                        {
-                            var conf = new ExcelDataSetConfiguration
-                            {
-                                UseColumnDataType = true,
+                        _currentrow = 0;
+                        _filename = Path.GetFileName(file);
+                        showMemo("Start loading " + _filename + " to temporary table!");
+                        Application.DoEvents();
 
-                                ConfigureDataTable = _ => new ExcelDataTableConfiguration
+                        string unilevel_file = file;
+                        dataSource.Reset();
+                        using (var stream = File.Open(file, FileMode.Open, FileAccess.Read))
+                        {
+                            using (var reader = ExcelReaderFactory.CreateReader(stream))
+                            {
+                                var conf = new ExcelDataSetConfiguration
                                 {
-                                    UseHeaderRow = true,
-                                    ReadHeaderRow = (rowReader) =>
+                                    UseColumnDataType = true,
+
+                                    ConfigureDataTable = _ => new ExcelDataTableConfiguration
                                     {
-                                        // F.ex skip the first row and use the 2nd row as column headers:
-                                        rowReader.Read();
+                                        UseHeaderRow = true,
+                                        ReadHeaderRow = (rowReader) =>
+                                        {
+                                            // F.ex skip the first row and use the 2nd row as column headers:
+                                            rowReader.Read();
+                                        }
+                                    }
+                                };
+                                var dataSet = reader.AsDataSet(conf);
+                                dataSource = dataSet.Tables[0];
+
+                                showMemo("Excel loaded in to temporary table!");
+                                Application.DoEvents();
+                            }
+                        }
+                        result = null;
+                        result = dataSource.Select();
+                        if (Connection_Datawarehouse())
+                        {
+                            progressBar1.Maximum = result.Length;
+                            progressBar1.Value = 1;
+
+                            using (var cmd = new NpgsqlCommand("INSERT INTO unilever_inv (invtype, docno, docdate, debtorcode, salesagent, prodname, prodcode, taxableamt, amount, category, outletname, districtname, cases) SELECT @a, @b, @c, @d, @e, @f, @g, @h, @i, @j, @k, @l, @m WHERE NOT EXISTS (SELECT id FROM unilever_inv WHERE docno=@b AND prodcode=@g);", Globals.postg_con))
+                            {
+                                var p_a = new NpgsqlParameter("a", DbType.String); // Adjust DbType according to type
+                                cmd.Parameters.Add(p_a);
+                                var p_b = new NpgsqlParameter("b", DbType.String); // Adjust DbType according to type
+                                cmd.Parameters.Add(p_b);
+                                var p_c = new NpgsqlParameter("c", DbType.Date); // Adjust DbType according to type
+                                cmd.Parameters.Add(p_c);
+                                var p_d = new NpgsqlParameter("d", DbType.String); // Adjust DbType according to type
+                                cmd.Parameters.Add(p_d);
+                                var p_e = new NpgsqlParameter("e", DbType.String); // Adjust DbType according to type
+                                cmd.Parameters.Add(p_e);
+                                var p_f = new NpgsqlParameter("f", DbType.String); // Adjust DbType according to type
+                                cmd.Parameters.Add(p_f);
+                                var p_g = new NpgsqlParameter("g", DbType.String); // Adjust DbType according to type
+                                cmd.Parameters.Add(p_g);
+                                var p_h = new NpgsqlParameter("h", DbType.Decimal); // Adjust DbType according to type
+                                cmd.Parameters.Add(p_h);
+                                var p_i = new NpgsqlParameter("i", DbType.Decimal); // Adjust DbType according to type
+                                cmd.Parameters.Add(p_i);
+                                var p_j = new NpgsqlParameter("j", DbType.String); // Adjust DbType according to type
+                                cmd.Parameters.Add(p_j);
+                                var p_k = new NpgsqlParameter("k", DbType.String); // Adjust DbType according to type
+                                cmd.Parameters.Add(p_k);
+                                var p_l = new NpgsqlParameter("l", DbType.String); // Adjust DbType according to type
+                                cmd.Parameters.Add(p_l);
+                                var p_m = new NpgsqlParameter("m", DbType.Decimal); // Adjust DbType according to type
+                                cmd.Parameters.Add(p_m);
+                                cmd.Prepare();   // This is optional but will optimize the statement for repeated use
+
+                                showMemo("Uploading to DataWarehouse started.");
+                                Application.DoEvents();
+
+                                foreach (DataRow row in result)
+                                {
+                                    _continue = true;
+
+                                    try
+                                    {
+                                        if (!row.IsNull("INVTYPE"))
+                                            p_a.Value = Convert.ToString(row["INVTYPE"]);
+                                        else
+                                            _continue = false;
+
+                                        p_b.Value = Convert.ToString(row["Sales Invoice Tax Number"]);
+
+                                        if (!row.IsNull("INVH_DATE"))
+                                            p_c.Value = Convert.ToDateTime(row["INVH_DATE"]);
+                                        else
+                                            _continue = false;
+
+                                        p_d.Value = "300" + Convert.ToString(row["Outlet Ref Code"]);
+                                        p_e.Value = Convert.ToString(row["Salesman Name(Order Booker)"]);
+                                        p_f.Value = Convert.ToString(row["Prod Name"]);
+                                        p_g.Value = Convert.ToString(row["Prod Code"]);
+
+                                        if (!row.IsNull("Net Amount"))
+                                            p_h.Value = Convert.ToDecimal(row["Net Amount"]);
+                                        else
+                                            p_h.Value = 0;
+
+                                        if (!row.IsNull("NIV_AFT_GST"))
+                                            p_i.Value = Convert.ToDecimal(row["NIV_AFT_GST"]);
+                                        else
+                                            p_i.Value = 0;
+
+                                        p_j.Value = Convert.ToString(row["Category"]);
+                                        p_k.Value = Convert.ToString(row["Outlet Name"]);
+                                        p_l.Value = Convert.ToString(row["District Name"]);
+
+                                        if (!row.IsNull("Cases"))
+                                            p_m.Value = Convert.ToDecimal(row["Cases"]);
+                                        else
+                                            p_m.Value = 0;
+                                    }
+                                    catch
+                                    {
+                                        _continue = false;
+                                    }
+
+                                    if (_continue)
+                                        cmd.ExecuteNonQuery();
+
+                                    _currentrow += 1;
+                                    if (_currentrow % 10 == 0)
+                                    {
+                                        progressBar1.Value = _currentrow;
+                                        Application.DoEvents();
                                     }
                                 }
-                            };
-                            var dataSet = reader.AsDataSet(conf);
-                            dataSource = dataSet.Tables[0];
+                                progressBar1.Value = _currentrow;
 
-                            showMemo("Excel loaded in to temporary table!");
-                            Application.DoEvents();
-                        }
-                    }
-                    result = null;
-                    result = dataSource.Select();
-                    if (Connection_Datawarehouse())
-                    {
-                        progressBar1.Maximum = result.Length;
-                        progressBar1.Value = 1;
-
-                        using (var cmd = new NpgsqlCommand("INSERT INTO unilever_inv (invtype, docno, docdate, debtorcode, salesagent, prodname, prodcode, taxableamt, amount) SELECT @a, @b, @c, @d, @e, @f, @g, @h, @i WHERE NOT EXISTS (SELECT id FROM unilever_inv WHERE docno=@b AND prodcode=@g);", Globals.postg_con))
-                        {
-                            var p_a = new NpgsqlParameter("a", DbType.String); // Adjust DbType according to type
-                            cmd.Parameters.Add(p_a);
-                            var p_b = new NpgsqlParameter("b", DbType.String); // Adjust DbType according to type
-                            cmd.Parameters.Add(p_b);
-                            var p_c = new NpgsqlParameter("c", DbType.Date); // Adjust DbType according to type
-                            cmd.Parameters.Add(p_c);
-                            var p_d = new NpgsqlParameter("d", DbType.String); // Adjust DbType according to type
-                            cmd.Parameters.Add(p_d);
-                            var p_e = new NpgsqlParameter("e", DbType.String); // Adjust DbType according to type
-                            cmd.Parameters.Add(p_e);
-                            var p_f = new NpgsqlParameter("f", DbType.String); // Adjust DbType according to type
-                            cmd.Parameters.Add(p_f);
-                            var p_g = new NpgsqlParameter("g", DbType.String); // Adjust DbType according to type
-                            cmd.Parameters.Add(p_g);
-                            var p_h = new NpgsqlParameter("h", DbType.Decimal); // Adjust DbType according to type
-                            cmd.Parameters.Add(p_h);
-                            var p_i = new NpgsqlParameter("i", DbType.Decimal); // Adjust DbType according to type
-                            cmd.Parameters.Add(p_i);
-                            cmd.Prepare();   // This is optional but will optimize the statement for repeated use
-
-                            showMemo("Uploading to DataWarehouse started.");
-                            Application.DoEvents();
-
-                            foreach (DataRow row in result)
-                            {
-                                _continue = true;
-
-                                try
-                                {
-                                    p_a.Value = Convert.ToString(row["INVTYPE"]);
-                                    p_b.Value = Convert.ToString(row["Sales Invoice Tax Number"]);
-                                    p_c.Value = Convert.ToDateTime(row["INVH_DATE"]);
-                                    p_d.Value = "300" + Convert.ToString(row["Outlet Ref Code"]);
-                                    p_e.Value = Convert.ToString(row["Salesman Name(Order Booker)"]);
-                                    p_f.Value = Convert.ToString(row["Prod Name"]);
-                                    p_g.Value = Convert.ToString(row["Prod Code"]);
-                                    p_h.Value = Convert.ToDecimal(row["Net Amount"]);
-                                    p_i.Value = Convert.ToDecimal(row["NIV_AFT_GST"]);
-                                }
-                                catch
-                                {
-                                    _continue = false;
-                                }
-                                
-                                if(_continue)
-                                    cmd.ExecuteNonQuery();
-                                
-                                _currentrow += 1;
-                                if (_currentrow % 10 == 0)
-                                {
-                                    progressBar1.Value = _currentrow;
-                                    Application.DoEvents();
-                                }
+                                showMemo("Uploading " + _filename + " to DataWarehouse ended.");
+                                Application.DoEvents();
                             }
-                            progressBar1.Value = _currentrow;
-
-                            showMemo("Uploading " + _filename + " to DataWarehouse ended.");
-                            Application.DoEvents();
                         }
+                        showMemo("Loading " + _filename + "into datawarehouse successful!");
+                        close_Datawarehouse();
                     }
-                    showMemo("Loading " + _filename + "into datawarehouse successful!");
-                    close_Datawarehouse();
                 }
             }
         }
@@ -685,7 +721,8 @@ namespace pangco_datawh_etl
 
                             m_createdb_cmd = new NpgsqlCommand(@"CREATE SEQUENCE public.unilever_inv_id_seq INCREMENT 1 START 1 MINVALUE 1 MAXVALUE 9223372036854775807 CACHE 1; ALTER SEQUENCE public.unilever_inv_id_seq OWNER TO postgres;", Globals.postg_con);
                             m_createdb_cmd.ExecuteNonQuery();
-                            m_createdb_cmd = new NpgsqlCommand(@"CREATE TABLE public.unilever_inv(id integer NOT NULL DEFAULT nextval('unilever_inv_id_seq'::regclass), invtype text, docno text, docdate date, debtorcode text, salesagent text, prodname text, prodcode text, taxableamt numeric(10, 2), amount numeric(10, 2), last_update timestamp DEFAULT now(), CONSTRAINT unilevel_inv_pkey PRIMARY KEY(id)) TABLESPACE pg_default; ALTER TABLE public.unilever_inv OWNER to postgres;", Globals.postg_con);
+
+                            m_createdb_cmd = new NpgsqlCommand(@"CREATE TABLE public.unilever_inv(id integer NOT NULL DEFAULT nextval('unilever_inv_id_seq'::regclass), invtype text, docno text, docdate date, debtorcode text, salesagent text, prodname text, prodcode text, taxableamt numeric(10, 2), amount numeric(10, 2), last_update timestamp DEFAULT now(), category text, outletname text, districtname text, cases numeric(10, 2), CONSTRAINT unilevel_inv_pkey PRIMARY KEY(id)) TABLESPACE pg_default; ALTER TABLE public.unilever_inv OWNER to postgres; CREATE INDEX unilever_docnoprodcode_idx ON public.unilever_inv (docno, prodcode); CREATE INDEX unilever_docdate_idx ON public.unilever_inv (docdate);", Globals.postg_con);
                             m_createdb_cmd.ExecuteNonQuery();
                             showMemo("Create Table unilever_inv!");
 
