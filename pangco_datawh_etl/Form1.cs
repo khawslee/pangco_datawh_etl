@@ -597,7 +597,7 @@ namespace pangco_datawh_etl
                             progressBar1.Maximum = result.Length;
                             progressBar1.Value = 1;
 
-                            using (var cmd = new NpgsqlCommand("INSERT INTO unilever_inv (invtype, docno, docdate, debtorcode, salesagent, prodname, prodcode, taxableamt, amount, category, outletname, districtname, cases, monthyear) SELECT @a, @b, @c, @d, @e, @f, @g, @h, @i, @j, @k, @l, @m, @n WHERE NOT EXISTS (SELECT id FROM unilever_inv WHERE docno=@b AND prodcode=@g);", Globals.postg_con))
+                            using (var cmd = new NpgsqlCommand("INSERT INTO unilever_inv (invtype, docno, docdate, debtorcode, salesagent, prodname, prodcode, taxableamt, amount, category, outletname, districtname, cases, monthyear, month, year) SELECT @a, @b, @c, @d, @e, @f, @g, @h, @i, @j, @k, @l, @m, @n, @o, @p WHERE NOT EXISTS (SELECT id FROM unilever_inv WHERE docno=@b AND prodcode=@g);", Globals.postg_con))
                             {
                                 var p_a = new NpgsqlParameter("a", DbType.String); // Adjust DbType according to type
                                 cmd.Parameters.Add(p_a);
@@ -627,6 +627,10 @@ namespace pangco_datawh_etl
                                 cmd.Parameters.Add(p_m);
                                 var p_n = new NpgsqlParameter("n", DbType.String); // Adjust DbType according to type
                                 cmd.Parameters.Add(p_n);
+                                var p_o = new NpgsqlParameter("o", DbType.Int32); // Adjust DbType according to type
+                                cmd.Parameters.Add(p_o);
+                                var p_p = new NpgsqlParameter("p", DbType.Int32); // Adjust DbType according to type
+                                cmd.Parameters.Add(p_p);
                                 cmd.Prepare();   // This is optional but will optimize the statement for repeated use
 
                                 showMemo("Uploading to DataWarehouse started.");
@@ -674,6 +678,9 @@ namespace pangco_datawh_etl
                                             p_m.Value = 0;
 
                                         p_n.Value = Convert.ToInt16(row["Year"]) + "-" + Convert.ToInt16(row["Month"]).ToString("00");
+
+                                        p_o.Value = Convert.ToInt16(row["Month"]);
+                                        p_p.Value = Convert.ToInt16(row["Year"]);
                                     }
                                     catch
                                     {
@@ -755,7 +762,7 @@ namespace pangco_datawh_etl
                             m_createdb_cmd = new NpgsqlCommand(@"CREATE SEQUENCE public.unilever_inv_id_seq INCREMENT 1 START 1 MINVALUE 1 MAXVALUE 9223372036854775807 CACHE 1; ALTER SEQUENCE public.unilever_inv_id_seq OWNER TO postgres;", Globals.postg_con);
                             m_createdb_cmd.ExecuteNonQuery();
 
-                            m_createdb_cmd = new NpgsqlCommand(@"CREATE TABLE public.unilever_inv(id integer NOT NULL DEFAULT nextval('unilever_inv_id_seq'::regclass), invtype text, docno text, docdate date, debtorcode text, salesagent text, prodname text, prodcode text, taxableamt numeric(10, 2), amount numeric(10, 2), last_update timestamp DEFAULT now(), category text, outletname text, districtname text, cases numeric(10, 2),monthyear text, CONSTRAINT unilevel_inv_pkey PRIMARY KEY(id)) TABLESPACE pg_default; ALTER TABLE public.unilever_inv OWNER to postgres; CREATE INDEX unilever_docnoprodcode_idx ON public.unilever_inv (docno, prodcode); CREATE INDEX unilever_docdate_idx ON public.unilever_inv (docdate); CREATE INDEX unilever_monthyear_idx ON public.unilever_inv (monthyear);", Globals.postg_con);
+                            m_createdb_cmd = new NpgsqlCommand(@"CREATE TABLE public.unilever_inv(id integer NOT NULL DEFAULT nextval('unilever_inv_id_seq'::regclass), invtype text, docno text, docdate date, debtorcode text, salesagent text, prodname text, prodcode text, taxableamt numeric(10, 2), amount numeric(10, 2), last_update timestamp DEFAULT now(), category text, outletname text, districtname text, cases numeric(10, 2), monthyear text, month smallint, year smallint, CONSTRAINT unilevel_inv_pkey PRIMARY KEY(id)) TABLESPACE pg_default; ALTER TABLE public.unilever_inv OWNER to postgres; CREATE INDEX unilever_docnoprodcode_idx ON public.unilever_inv (docno, prodcode); CREATE INDEX unilever_docdate_idx ON public.unilever_inv (docdate); CREATE INDEX unilever_monthyear_idx ON public.unilever_inv (monthyear); CREATE INDEX unilever_month_idx ON public.unilever_inv (month); CREATE INDEX unilever_year_idx ON public.unilever_inv (year);", Globals.postg_con);
                             m_createdb_cmd.ExecuteNonQuery();
                             showMemo("Create Table unilever_inv!");
 
