@@ -111,16 +111,16 @@ namespace pangco_datawh_etl
 
         private void Form1_FormClosing(object sender, FormClosingEventArgs e)
         {
-            DialogResult dialogResult = MessageBox.Show("Are you sure to exit application?", "Exit", MessageBoxButtons.YesNo);
+/*            DialogResult dialogResult = MessageBox.Show("Are you sure to exit application?", "Exit", MessageBoxButtons.YesNo);
             if (dialogResult == DialogResult.Yes)
-            {
+            {*/
                 close_Datawarehouse();
                 close_Autocount();
-            }
+/*            }
             else if (dialogResult == DialogResult.No)
             {
                 e.Cancel = true;
-            }
+            }*/
         }
 
         private void Form1_Resize(object sender, EventArgs e)
