@@ -184,6 +184,7 @@ namespace pangco_datawh_etl
                     string dec_string = Encrypt.DecryptString(readText);
                     Globals.jsonconfig = JObject.Parse(dec_string);
                     Globals.config_passwd = (string)Globals.jsonconfig["menu_pass"];
+                    btn_sync_Click(null, null);
                 }
                 catch (Exception)
                 {
